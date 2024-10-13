@@ -30,8 +30,7 @@ def handle_new_channel_post(update, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # Send the button below the post
-    #To receive translations in DM, click [Start Chat](https://t.me/Meta7Helper7Bot?start=1) to open a conversation with the bot.
-    context.bot.send_message(chat_id=message.chat_id, text="Click to translate this post to English.", reply_markup=reply_markup)
+    context.bot.send_message(chat_id=message.chat_id, text="To receive translations in DM, click [Start Chat](https://t.me/Meta7Helper7Bot?start=1) to open a conversation with the bot.", reply_markup=reply_markup)
 
 # Function to handle button clicks for translation
 def button(update, context):
