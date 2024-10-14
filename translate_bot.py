@@ -1,7 +1,14 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
-from telegram.ext import Updater, CallbackQueryHandler, CommandHandler, MessageHandler, Filters
-from telegram.error import Unauthorized
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
+from telegram.error import Unauthorized  # Import the Unauthorized exception
 from googletrans import Translator
+import json
+
+# A file to store the users who have issued the /start command
+STATS_FILE = "user_stats.json"
+
+# Your Telegram User ID for the admin check
+ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
 
 # Initialize the translator
 translator = Translator()
@@ -9,10 +16,38 @@ translator = Translator()
 # Dictionary to store message IDs and their content (text + formatting and media)
 messages = {}
 
+# Function to load the user data from the stats file
+def load_stats():
+    try:
+        with open(STATS_FILE, "r") as file:
+            content = file.read().strip()
+            if not content:  # Check if the file is empty
+                return {}
+            return json.loads(content)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        # If the file contains invalid JSON, reset it
+        return {}
+
+# Function to save the user data to the stats file
+def save_stats(stats):
+    with open(STATS_FILE, "w") as file:
+        json.dump(stats, file)
+
 # Handle the /start command in a private chat
-def start(update, context):
-    user_id = update.message.from_user.id
-    context.bot.send_message(chat_id=user_id, text="Hello! You can now receive translations by clicking the 'Translate to English' button on posts.")
+def start(update: Update, context: CallbackContext):
+    user_id = str(update.message.from_user.id)
+    stats = load_stats()
+
+    if user_id not in stats:
+        stats[user_id] = {"times_started": 1}
+    else:
+        stats[user_id]["times_started"] += 1
+
+    save_stats(stats)
+
+    update.message.reply_text("Hello! You can now receive translations by clicking the 'Translate to English' button on posts.")
 
 # Function to handle new posts in the channel
 def handle_new_channel_post(update, context):
@@ -62,7 +97,8 @@ def button(update, context):
                 else:
                     query.answer(text="Translation failed, please try again.")
             except Unauthorized:
-                query.answer(text="Please start a conversation with the bot first by clicking [here](https://t.me/YourBotUsername?start=1).")
+                # Notify the user they need to start a chat with the bot first
+                query.answer(text="You need to start a chat with the bot first.")
             except Exception as e:
                 query.answer(text=f"An error occurred: {str(e)}")
 
@@ -70,6 +106,23 @@ def button(update, context):
             query.answer(text="Translation sent to your DM.")
     else:
         query.answer(text="Error: Original message not found.")
+
+# Admin-only /stats command
+def stats(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+
+    # Check if the user is the admin
+    if user_id != ADMIN_USER_ID:
+        update.message.reply_text("You are not authorized to view the statistics.")
+        return
+
+    # Load statistics
+    stats = load_stats()
+    total_users = len(stats)
+    total_starts = sum([user_data["times_started"] for user_data in stats.values()])
+
+    update.message.reply_text(f"Total unique users: {total_users}")
+    update.message.reply_text(f"Total /start commands issued: {total_starts}")
 
 # Main function to start the bot
 def main():
@@ -85,6 +138,9 @@ def main():
 
     # Add handler for button clicks
     dp.add_handler(CallbackQueryHandler(button))
+
+    # Add handler for the /stats command (admin only)
+    dp.add_handler(CommandHandler("stats", stats))
 
     # Start the bot
     updater.start_polling()
