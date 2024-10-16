@@ -1,6 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import Unauthorized
+from telegram.error import Unauthorized, BadRequest  # Import BadRequest exception for invalid message_id
 from googletrans import Translator
 import sqlite3
 import time
@@ -25,7 +25,6 @@ def init_db():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        # Create a table to store user statistics if it doesn't exist
         cursor.execute('''CREATE TABLE IF NOT EXISTS stats (
                             user_id TEXT PRIMARY KEY,
                             times_started INTEGER)''')
@@ -50,7 +49,6 @@ def load_stats(retries=5):
         except sqlite3.Error as e:
             print(f"General SQLite error: {e}")
             return {}
-
     return {}
 
 # Function to save or update a user's stats in SQLite with retries
@@ -102,8 +100,12 @@ def handle_new_channel_post(update, context):
         keyboard = [[InlineKeyboardButton("Translate to English", callback_data=f'translate_{message.message_id}')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Edit the original post to add the translation button (no new notification sent)
-        context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
+        try:
+            # Try editing the original post to add the translation button (no new notification sent)
+            context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
+        except BadRequest as e:
+            # Handle invalid message_id (message might not exist or be uneditable)
+            print(f"Error editing message: {e}")
 
 # Function to handle button clicks for translation and send DM
 def button(update, context):
