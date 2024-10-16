@@ -1,5 +1,5 @@
 import os
-import json
+import sqlite3
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
@@ -7,14 +7,17 @@ from telegram.error import Unauthorized, BadRequest
 from googletrans import Translator
 import time  # for sleep
 
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
 
 # Your bot token from BotFather
 BOT_TOKEN = "7951430297:AAGn0GhfW83Btw-FR-wgWMaW-U35SCygf08"  # Replace with your actual bot token
-
-# JSON file setup for storing stats
-STATS_FILE = "user_stats.json"
 
 # Initialize the translator
 translator = Translator()
@@ -22,32 +25,59 @@ translator = Translator()
 # Dictionary to store message IDs and their content (text + formatting and media)
 messages = {}
 
-# Function to load stats from a JSON file
-def load_stats():
-    if os.path.exists(STATS_FILE):
-        with open(STATS_FILE, "r") as file:
-            try:
-                return json.load(file)
-            except json.JSONDecodeError:
-                return {}  # Return an empty dict if the file is corrupted or empty
-    return {}
+# SQLite database file
+DB_FILE = "bot_stats.db"
 
-# Function to save stats to a JSON file
-def save_stats(stats):
-    with open(STATS_FILE, "w") as file:
-        json.dump(stats, file)
+# Function to initialize the SQLite database and create the table
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    # Create the table if it doesn't exist
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_stats (
+        user_id TEXT PRIMARY KEY,
+        times_started INTEGER
+    )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+# Function to get user stats from SQLite
+def get_user_stats(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT times_started FROM user_stats WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+
+    conn.close()
+    return result[0] if result else 0
+
+# Function to increment the /start count for a user in SQLite
+def update_user_stats(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    current_count = get_user_stats(user_id)
+
+    if current_count == 0:
+        # Insert new user if they don't exist
+        cursor.execute("INSERT INTO user_stats (user_id, times_started) VALUES (?, ?)", (user_id, 1))
+    else:
+        # Update the count for existing user
+        cursor.execute("UPDATE user_stats SET times_started = times_started + 1 WHERE user_id = ?", (user_id,))
+
+    conn.commit()
+    conn.close()
 
 # Handle the /start command in a private chat
 def start(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
-    stats = load_stats()
 
-    if user_id not in stats:
-        stats[user_id] = {"times_started": 1}
-    else:
-        stats[user_id]["times_started"] += 1
-
-    save_stats(stats)
+    # Update user stats in SQLite
+    update_user_stats(user_id)
 
     update.message.reply_text("Hello! You can now receive translations by clicking the 'Translate to English' button on posts.")
 
@@ -160,16 +190,26 @@ def stats(update: Update, context: CallbackContext):
         update.message.reply_text("You are not authorized to view the statistics.")
         return
 
-    # Load statistics
-    stats = load_stats()
-    total_users = len(stats)
-    total_starts = sum([user_data["times_started"] for user_data in stats.values()])
+    # Fetch stats from SQLite
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM user_stats")
+    total_users = cursor.fetchone()[0]
+
+    cursor.execute("SELECT SUM(times_started) FROM user_stats")
+    total_starts = cursor.fetchone()[0] or 0
+
+    conn.close()
 
     update.message.reply_text(f"Total unique users: {total_users}")
     update.message.reply_text(f"Total /start commands issued: {total_starts}")
 
 # Main function to start the bot
 def main():
+    # Initialize the SQLite database
+    init_db()
+
     # Initialize the bot
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
