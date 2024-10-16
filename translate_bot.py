@@ -105,10 +105,21 @@ def button(update: Update, context: CallbackContext):
                 # Debug: Print or log the message text before translation
                 logger.info(f"Translating text: {russian_text}")
 
-                # Translate the Russian text to English
-                translated_text = translator.translate(russian_text, src='ru', dest='en').text
+                # Retry mechanism for translation
+                attempts = 3
+                translated_text = None
 
-                # Check if translation is valid
+                for attempt in range(attempts):
+                    try:
+                        # Translate the Russian text to English
+                        translated_text = translator.translate(russian_text, src='ru', dest='en').text
+                        if translated_text:  # If valid response is received, break the loop
+                            break
+                    except json.decoder.JSONDecodeError as e:
+                        logger.warning(f"Translation API error, attempt {attempt + 1} of {attempts}: {e}")
+                        if attempt == attempts - 1:  # If it's the last attempt, raise the exception
+                            raise
+
                 if not translated_text or translated_text == russian_text:
                     query.answer(text="Translation failed, please try again.")
                     return
