@@ -60,19 +60,24 @@ def start(update: Update, context: CallbackContext):
 def handle_new_channel_post(update, context):
     message = update.channel_post
 
+    if not message:
+        return  # Exit if the message is None
+
     # Store the caption (or text) and media
-    message_text = message.caption_html or message.text_html or message.caption or message.text
-    messages[message.message_id] = {
-        'text': message_text if message_text else "",
-        'media': message.photo or message.video or message.animation or message.document
-    }
+    message_text = getattr(message, 'caption_html', None) or getattr(message, 'text_html', None) or message.caption or message.text
 
-    # Create a translation button
-    keyboard = [[InlineKeyboardButton("Translate to English", callback_data=f'translate_{message.message_id}')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    if message_text:
+        messages[message.message_id] = {
+            'text': message_text if message_text else "",
+            'media': message.photo or message.video or message.animation or message.document
+        }
 
-    # Edit the original post to add the translation button (no new notification sent)
-    context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
+        # Create a translation button
+        keyboard = [[InlineKeyboardButton("Translate to English", callback_data=f'translate_{message.message_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Edit the original post to add the translation button (no new notification sent)
+        context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
 
 # Function to handle button clicks for translation and send DM
 def button(update, context):
