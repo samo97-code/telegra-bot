@@ -2,9 +2,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Upda
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 from telegram.error import Unauthorized, BadRequest  # Import BadRequest exception for invalid message_id
 from googletrans import Translator
-import sqlite3
-import time
 import json
+import os
 
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
@@ -12,8 +11,8 @@ ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
 # Your bot token from BotFather
 BOT_TOKEN = "7951430297:AAGn0GhfW83Btw-FR-wgWMaW-U35SCygf08"  # Replace with your actual bot token
 
-# SQLite database setup
-DB_FILE = "user_stats.db"
+# JSON file setup for storing stats
+STATS_FILE = "user_stats.json"
 
 # Initialize the translator
 translator = Translator()
@@ -21,52 +20,20 @@ translator = Translator()
 # Dictionary to store message IDs and their content (text + formatting and media)
 messages = {}
 
-# SQLite database initialization
-def init_db():
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS stats (
-                            user_id TEXT PRIMARY KEY,
-                            times_started INTEGER)''')
-        conn.commit()
-        conn.close()
-    except sqlite3.Error as e:
-        print(f"Error initializing SQLite DB: {e}")
-
-# Function to load stats from SQLite with retries
-def load_stats(retries=5):
-    for attempt in range(retries):
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM stats")
-            stats = {row[0]: {"times_started": row[1]} for row in cursor.fetchall()}
-            conn.close()
-            return stats
-        except sqlite3.OperationalError as e:
-            print(f"SQLite error (attempt {attempt + 1}/{retries}): {e}")
-            time.sleep(1)  # Retry after a short pause
-        except sqlite3.Error as e:
-            print(f"General SQLite error: {e}")
-            return {}
+# Function to load stats from a JSON file
+def load_stats():
+    if os.path.exists(STATS_FILE):
+        with open(STATS_FILE, "r") as file:
+            try:
+                return json.load(file)
+            except json.JSONDecodeError:
+                return {}  # Return an empty dict if the file is corrupted or empty
     return {}
 
-# Function to save or update a user's stats in SQLite with retries
-def save_stats(user_id, times_started, retries=5):
-    for attempt in range(retries):
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("INSERT OR REPLACE INTO stats (user_id, times_started) VALUES (?, ?)", (user_id, times_started))
-            conn.commit()
-            conn.close()
-            break  # Exit loop if successful
-        except sqlite3.OperationalError as e:
-            print(f"SQLite error (attempt {attempt + 1}/{retries}): {e}")
-            time.sleep(1)  # Retry after a short pause
-        except sqlite3.Error as e:
-            print(f"General SQLite error: {e}")
+# Function to save stats to a JSON file
+def save_stats(stats):
+    with open(STATS_FILE, "w") as file:
+        json.dump(stats, file)
 
 # Handle the /start command in a private chat
 def start(update: Update, context: CallbackContext):
@@ -74,10 +41,11 @@ def start(update: Update, context: CallbackContext):
     stats = load_stats()
 
     if user_id not in stats:
-        save_stats(user_id, 1)
+        stats[user_id] = {"times_started": 1}
     else:
         stats[user_id]["times_started"] += 1
-        save_stats(user_id, stats[user_id]["times_started"])
+
+    save_stats(stats)
 
     update.message.reply_text("Hello! You can now receive translations by clicking the 'Translate to English' button on posts.")
 
@@ -148,7 +116,7 @@ def button(update, context):
                 query.answer(text="An error occurred during translation. Please try again.")
                 print(f"JSONDecodeError: {e}")
             except Exception as e:
-                query.answer(text=f"An error occurred: {str(e)}")
+                query.answer(text=f"An error occurred1111: {str(e)}")
 
             # Acknowledge the button click without changing the channel post
             query.answer(text="Translation sent to your DM.")
@@ -174,9 +142,6 @@ def stats(update: Update, context: CallbackContext):
 
 # Main function to start the bot
 def main():
-    # Initialize the SQLite database
-    init_db()
-
     # Initialize the bot
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
