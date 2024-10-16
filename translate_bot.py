@@ -1,11 +1,17 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import Unauthorized  # Import the Unauthorized exception
+from telegram.error import Unauthorized
 from googletrans import Translator
 import sqlite3
 
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
+
+# Your bot token from BotFather
+BOT_TOKEN = "7951430297:AAGn0GhfW83Btw-FR-wgWMaW-U35SCygf08"  # Replace with your actual bot token
+
+# SQLite database setup
+DB_FILE = "user_stats.db"
 
 # Initialize the translator
 translator = Translator()
@@ -13,9 +19,7 @@ translator = Translator()
 # Dictionary to store message IDs and their content (text + formatting and media)
 messages = {}
 
-# SQLite database setup
-DB_FILE = "user_stats.db"
-
+# SQLite database initialization
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -28,20 +32,27 @@ def init_db():
 
 # Function to load stats from SQLite
 def load_stats():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM stats")
-    stats = {row[0]: {"times_started": row[1]} for row in cursor.fetchall()}
-    conn.close()
-    return stats
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM stats")
+        stats = {row[0]: {"times_started": row[1]} for row in cursor.fetchall()}
+        conn.close()
+        return stats
+    except sqlite3.Error as e:
+        print(f"SQLite error: {e}")
+        return {}
 
 # Function to save or update a user's stats in SQLite
 def save_stats(user_id, times_started):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO stats (user_id, times_started) VALUES (?, ?)", (user_id, times_started))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO stats (user_id, times_started) VALUES (?, ?)", (user_id, times_started))
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"SQLite error: {e}")
 
 # Handle the /start command in a private chat
 def start(update: Update, context: CallbackContext):
@@ -138,8 +149,11 @@ def stats(update: Update, context: CallbackContext):
 
 # Main function to start the bot
 def main():
+    # Initialize the SQLite database
+    init_db()
+
     # Initialize the bot
-    updater = Updater("7951430297:AAGn0GhfW83Btw-FR-wgWMaW-U35SCygf08", use_context=True)
+    updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
     # Add handler for the /start command
