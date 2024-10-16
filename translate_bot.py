@@ -5,6 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Upda
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 from telegram.error import Unauthorized, BadRequest
 from googletrans import Translator
+import time  # for sleep
 
 # Enable logging
 logging.basicConfig(
@@ -105,19 +106,22 @@ def button(update: Update, context: CallbackContext):
                 # Debug: Print or log the message text before translation
                 logger.info(f"Translating text: {russian_text}")
 
-                # Retry mechanism for translation
-                attempts = 3
+                # Retry mechanism for translation with automatic retry on error
+                attempts = 3  # Set number of attempts
+                delay_between_attempts = 2  # Delay in seconds between attempts
                 translated_text = None
 
                 for attempt in range(attempts):
                     try:
-                        # Translate the Russian text to English
+                        # Try to translate the Russian text to English
                         translated_text = translator.translate(russian_text, src='ru', dest='en').text
-                        if translated_text:  # If valid response is received, break the loop
+                        if translated_text:  # If translation is successful, break out of the loop
                             break
                     except json.decoder.JSONDecodeError as e:
                         logger.warning(f"Translation API error, attempt {attempt + 1} of {attempts}: {e}")
-                        if attempt == attempts - 1:  # If it's the last attempt, raise the exception
+                        if attempt < attempts - 1:  # If it's not the last attempt, wait before retrying
+                            time.sleep(delay_between_attempts)
+                        else:  # If all attempts fail, raise the exception
                             raise
 
                 if not translated_text or translated_text == russian_text:
