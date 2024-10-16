@@ -1,10 +1,10 @@
+import os
+import json
+import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 from telegram.error import Unauthorized, BadRequest
 from googletrans import Translator
-import json
-import logging
-import time
 
 # Enable logging
 logging.basicConfig(
@@ -57,7 +57,7 @@ def start(update: Update, context: CallbackContext):
     update.message.reply_text("Hello! You can now receive translations by clicking the 'Translate to English' button on posts.")
 
 # Function to handle new posts in the channel and add the translation button without a new notification
-def handle_new_channel_post(update, context):
+def handle_new_channel_post(update: Update, context: CallbackContext):
     message = update.channel_post
 
     if not message:
@@ -65,29 +65,30 @@ def handle_new_channel_post(update, context):
 
     # Store the caption (or text) and media
     message_text = getattr(message, 'caption_html', None) or getattr(message, 'text_html', None) or message.caption or message.text
+    if not message_text:
+        logger.error(f"No text or caption found for message ID: {message.message_id}")
+        return
 
-    if message_text:
-        # Debug: Print or log the message text for translation
-        logger.info(f"Received message for translation: {message_text}")
+    logger.info(f"Received message for translation: {message_text}")
 
-        messages[message.message_id] = {
-            'text': message_text if message_text else "",
-            'media': message.photo or message.video or message.animation or message.document
-        }
+    messages[message.message_id] = {
+        'text': message_text,
+        'media': message.photo or message.video or message.animation or message.document
+    }
 
-        # Create a translation button
-        keyboard = [[InlineKeyboardButton("Translate to English", callback_data=f'translate_{message.message_id}')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    # Create a translation button
+    keyboard = [[InlineKeyboardButton("Translate to English", callback_data=f'translate_{message.message_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        try:
-            # Try editing the original post to add the translation button (no new notification sent)
-            context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
-        except BadRequest as e:
-            # Handle invalid message_id (message might not exist or be uneditable)
-            logger.error(f"Error editing message: {e}")
+    try:
+        # Try editing the original post to add the translation button (no new notification sent)
+        context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
+    except BadRequest as e:
+        # Handle invalid message_id (message might not exist or be uneditable)
+        logger.error(f"Error editing message: {e}")
 
 # Function to handle button clicks for translation and send DM
-def button(update, context):
+def button(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     message_id = int(query.data.split('_')[1])
@@ -131,7 +132,7 @@ def button(update, context):
             except Exception as e:
                 # Log the error with details
                 logger.error(f"Unexpected error during translation: {e}")
-                query.answer(text=f"An error occurred1111: {str(e)}")
+                query.answer(text=f"An error occurred: {str(e)}")
 
             # Acknowledge the button click without changing the channel post
             query.answer(text="Translation sent to your DM.")
