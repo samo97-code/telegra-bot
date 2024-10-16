@@ -4,6 +4,7 @@ from telegram.error import Unauthorized, BadRequest  # Import BadRequest excepti
 from googletrans import Translator
 import sqlite3
 import time
+import json
 
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
@@ -124,21 +125,28 @@ def button(update, context):
             try:
                 # Translate the Russian text to English
                 translated_text = translator.translate(russian_text, src='ru', dest='en').text
-                if translated_text:
-                    # Send the translation as a private message (DM) to the user who clicked the button
-                    if media:
-                        if isinstance(media, list):  # Handle photos
-                            context.bot.send_photo(chat_id=user_id, photo=media[-1].file_id, caption=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
-                        elif hasattr(media, 'file_id'):  # Handle video, GIF, etc.
-                            context.bot.send_document(chat_id=user_id, document=media.file_id, caption=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
-                    else:
-                        # Send the translated text as a DM
-                        context.bot.send_message(chat_id=user_id, text=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
-                else:
+
+                # Check if translation is valid
+                if not translated_text or translated_text == russian_text:
                     query.answer(text="Translation failed, please try again.")
+                    return
+
+                # Send the translation as a private message (DM) to the user who clicked the button
+                if media:
+                    if isinstance(media, list):  # Handle photos
+                        context.bot.send_photo(chat_id=user_id, photo=media[-1].file_id, caption=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
+                    elif hasattr(media, 'file_id'):  # Handle video, GIF, etc.
+                        context.bot.send_document(chat_id=user_id, document=media.file_id, caption=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
+                else:
+                    # Send the translated text as a DM
+                    context.bot.send_message(chat_id=user_id, text=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
             except Unauthorized:
                 # Notify the user they need to start a chat with the bot first
                 query.answer(text="You need to start a chat with the bot first.")
+            except json.decoder.JSONDecodeError as e:
+                # Handle JSON errors from translation API
+                query.answer(text="An error occurred during translation. Please try again.")
+                print(f"JSONDecodeError: {e}")
             except Exception as e:
                 query.answer(text=f"An error occurred: {str(e)}")
 
