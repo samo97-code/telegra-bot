@@ -107,7 +107,7 @@ def button(update: Update, context: CallbackContext):
                 logger.info(f"Translating text: {russian_text}")
 
                 # Retry mechanism for translation with automatic retry on error
-                attempts = 3  # Set number of attempts
+                attempts = 5  # Increase number of attempts
                 delay_between_attempts = 2  # Delay in seconds between attempts
                 translated_text = None
 
@@ -122,6 +122,12 @@ def button(update: Update, context: CallbackContext):
                         if attempt < attempts - 1:  # If it's not the last attempt, wait before retrying
                             time.sleep(delay_between_attempts)
                         else:  # If all attempts fail, raise the exception
+                            raise
+                    except Exception as e:
+                        logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+                        if attempt < attempts - 1:
+                            time.sleep(delay_between_attempts)
+                        else:
                             raise
 
                 if not translated_text or translated_text == russian_text:
