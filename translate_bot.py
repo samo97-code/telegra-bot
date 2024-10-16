@@ -1,9 +1,16 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Update
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import Unauthorized, BadRequest  # Import BadRequest exception for invalid message_id
+from telegram.error import Unauthorized, BadRequest
 from googletrans import Translator
 import json
-import os
+import logging
+import time
+
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
@@ -60,6 +67,9 @@ def handle_new_channel_post(update, context):
     message_text = getattr(message, 'caption_html', None) or getattr(message, 'text_html', None) or message.caption or message.text
 
     if message_text:
+        # Debug: Print or log the message text for translation
+        logger.info(f"Received message for translation: {message_text}")
+
         messages[message.message_id] = {
             'text': message_text if message_text else "",
             'media': message.photo or message.video or message.animation or message.document
@@ -74,7 +84,7 @@ def handle_new_channel_post(update, context):
             context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
         except BadRequest as e:
             # Handle invalid message_id (message might not exist or be uneditable)
-            print(f"Error editing message: {e}")
+            logger.error(f"Error editing message: {e}")
 
 # Function to handle button clicks for translation and send DM
 def button(update, context):
@@ -91,6 +101,9 @@ def button(update, context):
 
         if russian_text:
             try:
+                # Debug: Print or log the message text before translation
+                logger.info(f"Translating text: {russian_text}")
+
                 # Translate the Russian text to English
                 translated_text = translator.translate(russian_text, src='ru', dest='en').text
 
@@ -114,8 +127,10 @@ def button(update, context):
             except json.decoder.JSONDecodeError as e:
                 # Handle JSON errors from translation API
                 query.answer(text="An error occurred during translation. Please try again.")
-                print(f"JSONDecodeError: {e}")
+                logger.error(f"JSONDecodeError: {e}")
             except Exception as e:
+                # Log the error with details
+                logger.error(f"Unexpected error during translation: {e}")
                 query.answer(text=f"An error occurred1111: {str(e)}")
 
             # Acknowledge the button click without changing the channel post
