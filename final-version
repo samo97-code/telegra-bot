@@ -1,0 +1,201 @@
+import sqlite3
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
+from apscheduler.schedulers.background import BackgroundScheduler
+import pytz
+from datetime import datetime
+
+# Set up your bot token from BotFather
+BOT_TOKEN = '7951430297:AAGn0GhfW83Btw-FR-wgWMaW-U35SCygf08'
+CHANNEL_ID = '763267268'
+YourBotUsername = 'Meta7Helper7Bot'  # Bot username
+
+# Initialize SQLite database for referral tracking and airdrop messages
+def init_db():
+    conn = sqlite3.connect('referrals.db')
+    cursor = conn.cursor()
+
+    # Check if the 'username' column exists; if not, add it
+    cursor.execute("PRAGMA table_info(referrals);")
+    columns = [info[1] for info in cursor.fetchall()]
+    if 'username' not in columns:
+        cursor.execute("ALTER TABLE referrals ADD COLUMN username TEXT")
+
+    # Create a new table for storing airdrop messages
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS airdrops (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        airdrop_message TEXT,
+        created_at TEXT
+    )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+# Send Airdrop Notification (automated)
+def send_airdrop_notification(context: CallbackContext):
+    airdrop_info = "🚀 Reminder: Don't miss out on the airdrop! Join the event and earn rewards!"
+    context.bot.send_message(chat_id=CHANNEL_ID, text=airdrop_info)
+
+# Start Command: Welcome message
+def start(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    username = update.effective_user.username or f"User {user_id}"
+    referral_link = f"t.me/{YourBotUsername}?start={user_id}"
+
+    # Store the user info in the database if not already present
+    conn = sqlite3.connect('referrals.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO referrals (user_id, username, referral_link) VALUES (?, ?, ?)",
+                   (user_id, username, referral_link))
+    conn.commit()
+    conn.close()
+
+    welcome_message = f"Welcome to the Crypto Channel Bot! Use /airdrop to see upcoming events. Your unique referral link is: {referral_link}"
+    context.bot.send_message(chat_id=update.effective_chat.id, text=welcome_message)
+
+# Airdrop Command: Notify users about the current airdrop
+def airdrop(update: Update, context: CallbackContext):
+    airdrop_info = "🚀 Upcoming Airdrop: Earn 50 XYZ tokens by joining the event here: [Airdrop Link]"
+    context.bot.send_message(chat_id=update.effective_chat.id, text=airdrop_info)
+
+# Command to create a custom airdrop message (only for admins or bot owner)
+def create_airdrop(update: Update, context: CallbackContext):
+    user = update.effective_user
+    chat = update.effective_chat
+    owner_id = 763267268  # Your user ID
+
+    # Check if the user is an admin, creator, or the bot owner
+    if context.bot.get_chat_member(chat.id, user.id).status in ['administrator', 'creator'] or user.id == owner_id:
+        # Get the airdrop text from the command
+        airdrop_message = ' '.join(context.args)
+
+        if not airdrop_message:
+            context.bot.send_message(chat_id=update.effective_chat.id, text="Please provide the airdrop text after the command.")
+            return
+
+        # Broadcast the airdrop message to the channel with Markdown formatting
+        context.bot.send_message(chat_id=CHANNEL_ID, text=f"🚀 *New Airdrop*: {airdrop_message}", parse_mode="Markdown")
+
+        # Save the airdrop message to the database with the current timestamp
+        conn = sqlite3.connect('referrals.db')
+        cursor = conn.cursor()
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("INSERT INTO airdrops (airdrop_message, created_at) VALUES (?, ?)", (airdrop_message, current_time))
+        conn.commit()
+        conn.close()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Airdrop message has been broadcasted and saved.")
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Only administrators can create and send airdrop messages.")
+
+# Command to view the history of airdrop messages
+def airdrop_history(update: Update, context: CallbackContext):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    # Check if the user is an admin or creator
+    if context.bot.get_chat_member(chat.id, user.id).status in ['administrator', 'creator']:
+        conn = sqlite3.connect('referrals.db')
+        cursor = conn.cursor()
+
+        # Retrieve the last 10 airdrop messages from the database
+        cursor.execute("SELECT airdrop_message, created_at FROM airdrops ORDER BY created_at DESC LIMIT 10")
+        airdrop_messages = cursor.fetchall()
+        conn.close()
+
+        if airdrop_messages:
+            history_message = "📜 *Airdrop History* 📜\n\n"
+            for i, (message, created_at) in enumerate(airdrop_messages, start=1):
+                history_message += f"{i}. {created_at} - {message}\n"
+            context.bot.send_message(chat_id=update.effective_chat.id, text=history_message, parse_mode="Markdown")
+        else:
+            context.bot.send_message(chat_id=update.effective_chat.id, text="No airdrop history found.")
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Only administrators can view the airdrop history.")
+
+# Leaderboard Command: Show top users who referred the most people (display username)
+def leaderboard(update: Update, context: CallbackContext):
+    conn = sqlite3.connect('referrals.db')
+    cursor = conn.cursor()
+
+    # Query the top 10 users with the highest referral counts
+    cursor.execute("SELECT username, referrals_count FROM referrals ORDER BY referrals_count DESC LIMIT 10")
+    top_referrals = cursor.fetchall()
+
+    conn.close()
+
+    if top_referrals:
+        leaderboard_message = "🏆 *Leaderboard of Top Referrers* 🏆\n\n"
+        for rank, (username, referrals_count) in enumerate(top_referrals, start=1):
+            leaderboard_message += f"{rank}. @{username}: {referrals_count} invites\n"
+        context.bot.send_message(chat_id=update.effective_chat.id, text=leaderboard_message, parse_mode="Markdown")
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="No referrals found yet.")
+
+# Reset Leaderboard Command: Resets all referral counts to zero
+def reset_leaderboard(update: Update, context: CallbackContext):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    # Check if the user is an admin before allowing leaderboard reset
+    if context.bot.get_chat_member(chat.id, user.id).status in ['administrator', 'creator']:
+        conn = sqlite3.connect('referrals.db')
+        cursor = conn.cursor()
+
+        # Reset all referral counts to zero
+        cursor.execute("UPDATE referrals SET referrals_count = 0")
+        conn.commit()
+        conn.close()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="The leaderboard has been reset.")
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Only administrators can reset the leaderboard.")
+
+# Invite Command: Generates referral link and stores it in the database
+def invite(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    username = update.effective_user.username or f"User {user_id}"
+    referral_link = f"t.me/{YourBotUsername}?start={user_id}"
+
+    # Store the user info in the database if not already present
+    conn = sqlite3.connect('referrals.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO referrals (user_id, username, referral_link) VALUES (?, ?, ?)",
+                   (user_id, username, referral_link))
+    conn.commit()
+    conn.close()
+
+    invite_message = f"Here is your unique referral link: {referral_link}\nShare it to invite others and earn rewards!"
+    context.bot.send_message(chat_id=update.effective_chat.id, text=invite_message)
+
+# Set up the bot and handlers
+def main():
+    # Initialize database and ensure the correct schema
+    init_db()
+
+    # Set up the updater and dispatcher
+    updater = Updater(token=BOT_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+
+    # Add command handlers
+    dispatcher.add_handler(CommandHandler('start', start))
+    dispatcher.add_handler(CommandHandler('airdrop', airdrop))
+    dispatcher.add_handler(CommandHandler('create_airdrop', create_airdrop))
+    dispatcher.add_handler(CommandHandler('airdrop_history', airdrop_history))
+    dispatcher.add_handler(CommandHandler('leaderboard', leaderboard))
+    dispatcher.add_handler(CommandHandler('reset_leaderboard', reset_leaderboard))
+    dispatcher.add_handler(CommandHandler('invite', invite))
+
+    # Set up the scheduler for automated airdrop notifications with timezone support
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(send_airdrop_notification, 'interval', hours=24, args=[updater.bot], timezone=pytz.UTC)
+    scheduler.start()
+
+    # Start the bot
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()

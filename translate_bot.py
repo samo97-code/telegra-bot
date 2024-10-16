@@ -2,10 +2,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, Upda
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 from telegram.error import Unauthorized  # Import the Unauthorized exception
 from googletrans import Translator
-import json
-
-# A file to store the users who have issued the /start command
-STATS_FILE = "user_stats.json"
+import sqlite3
 
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
@@ -16,24 +13,35 @@ translator = Translator()
 # Dictionary to store message IDs and their content (text + formatting and media)
 messages = {}
 
-# Function to load the user data from the stats file
-def load_stats():
-    try:
-        with open(STATS_FILE, "r") as file:
-            content = file.read().strip()
-            if not content:  # Check if the file is empty
-                return {}
-            return json.loads(content)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        # If the file contains invalid JSON, reset it
-        return {}
+# SQLite database setup
+DB_FILE = "user_stats.db"
 
-# Function to save the user data to the stats file
-def save_stats(stats):
-    with open(STATS_FILE, "w") as file:
-        json.dump(stats, file)
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    # Create a table to store user statistics if it doesn't exist
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stats (
+                        user_id TEXT PRIMARY KEY,
+                        times_started INTEGER)''')
+    conn.commit()
+    conn.close()
+
+# Function to load stats from SQLite
+def load_stats():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM stats")
+    stats = {row[0]: {"times_started": row[1]} for row in cursor.fetchall()}
+    conn.close()
+    return stats
+
+# Function to save or update a user's stats in SQLite
+def save_stats(user_id, times_started):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO stats (user_id, times_started) VALUES (?, ?)", (user_id, times_started))
+    conn.commit()
+    conn.close()
 
 # Handle the /start command in a private chat
 def start(update: Update, context: CallbackContext):
@@ -41,15 +49,14 @@ def start(update: Update, context: CallbackContext):
     stats = load_stats()
 
     if user_id not in stats:
-        stats[user_id] = {"times_started": 1}
+        save_stats(user_id, 1)
     else:
         stats[user_id]["times_started"] += 1
-
-    save_stats(stats)
+        save_stats(user_id, stats[user_id]["times_started"])
 
     update.message.reply_text("Hello! You can now receive translations by clicking the 'Translate to English' button on posts.")
 
-# Function to handle new posts in the channel
+# Function to handle new posts in the channel and add the translation button without a new notification
 def handle_new_channel_post(update, context):
     message = update.channel_post
 
@@ -64,10 +71,10 @@ def handle_new_channel_post(update, context):
     keyboard = [[InlineKeyboardButton("Translate to English", callback_data=f'translate_{message.message_id}')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Send the button below the post
-    context.bot.send_message(chat_id=message.chat_id, text="To receive translations in DM, click [Start Chat](https://t.me/Meta7Helper7Bot?start=1) to open a conversation with the bot.", reply_markup=reply_markup)
+    # Edit the original post to add the translation button (no new notification sent)
+    context.bot.edit_message_reply_markup(chat_id=message.chat_id, message_id=message.message_id, reply_markup=reply_markup)
 
-# Function to handle button clicks for translation
+# Function to handle button clicks for translation and send DM
 def button(update, context):
     query = update.callback_query
     user_id = query.from_user.id
