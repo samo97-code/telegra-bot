@@ -3,6 +3,7 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageH
 from telegram.error import Unauthorized
 from googletrans import Translator
 import sqlite3
+import time
 
 # Your Telegram User ID for the admin check
 ADMIN_USER_ID = 763267268  # Replace with your actual Telegram user ID
@@ -21,38 +22,52 @@ messages = {}
 
 # SQLite database initialization
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    # Create a table to store user statistics if it doesn't exist
-    cursor.execute('''CREATE TABLE IF NOT EXISTS stats (
-                        user_id TEXT PRIMARY KEY,
-                        times_started INTEGER)''')
-    conn.commit()
-    conn.close()
-
-# Function to load stats from SQLite
-def load_stats():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM stats")
-        stats = {row[0]: {"times_started": row[1]} for row in cursor.fetchall()}
-        conn.close()
-        return stats
-    except sqlite3.Error as e:
-        print(f"SQLite error: {e}")
-        return {}
-
-# Function to save or update a user's stats in SQLite
-def save_stats(user_id, times_started):
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO stats (user_id, times_started) VALUES (?, ?)", (user_id, times_started))
+        # Create a table to store user statistics if it doesn't exist
+        cursor.execute('''CREATE TABLE IF NOT EXISTS stats (
+                            user_id TEXT PRIMARY KEY,
+                            times_started INTEGER)''')
         conn.commit()
         conn.close()
     except sqlite3.Error as e:
-        print(f"SQLite error: {e}")
+        print(f"Error initializing SQLite DB: {e}")
+
+# Function to load stats from SQLite with retries
+def load_stats(retries=5):
+    for attempt in range(retries):
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM stats")
+            stats = {row[0]: {"times_started": row[1]} for row in cursor.fetchall()}
+            conn.close()
+            return stats
+        except sqlite3.OperationalError as e:
+            print(f"SQLite error (attempt {attempt + 1}/{retries}): {e}")
+            time.sleep(1)  # Retry after a short pause
+        except sqlite3.Error as e:
+            print(f"General SQLite error: {e}")
+            return {}
+
+    return {}
+
+# Function to save or update a user's stats in SQLite with retries
+def save_stats(user_id, times_started, retries=5):
+    for attempt in range(retries):
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR REPLACE INTO stats (user_id, times_started) VALUES (?, ?)", (user_id, times_started))
+            conn.commit()
+            conn.close()
+            break  # Exit loop if successful
+        except sqlite3.OperationalError as e:
+            print(f"SQLite error (attempt {attempt + 1}/{retries}): {e}")
+            time.sleep(1)  # Retry after a short pause
+        except sqlite3.Error as e:
+            print(f"General SQLite error: {e}")
 
 # Handle the /start command in a private chat
 def start(update: Update, context: CallbackContext):
