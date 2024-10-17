@@ -159,9 +159,13 @@ def translate(update: Update, context: CallbackContext, message_id=None):
             for attempt in range(attempts):
                 try:
                     # Try to translate the Russian text to English
-                    translated_text = translator.translate(russian_text, src='ru', dest='en').text
-                    if translated_text:  # If translation is successful, break the loop
-                        break
+                    response = translator.translate(russian_text, src='ru', dest='en')
+                    translated_text = response.text
+
+                    # Ensure that the translated_text is valid and not None
+                    if translated_text and isinstance(translated_text, str):
+                        break  # Break out of the loop if translation is successful
+
                 except json.decoder.JSONDecodeError as e:
                     logger.warning(f"Translation API error (attempt {attempt + 1}/{attempts}): {e}")
                     if attempt < attempts - 1:
@@ -205,6 +209,7 @@ def translate(update: Update, context: CallbackContext, message_id=None):
     else:
         context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="Error: Original message not found.")
         context.bot.delete_message(chat_id=user_id, message_id=loading_message.message_id)  # Ensure deletion if no message found
+
 
 # Function to handle new posts in the channel and store the message for translation
 def handle_new_channel_post(update: Update, context: CallbackContext):
