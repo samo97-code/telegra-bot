@@ -120,14 +120,12 @@ def deep_link_handler(update: Update, context: CallbackContext):
 def translate(update: Update, context: CallbackContext, message_id=None):
     user_id = update.message.from_user.id  # User who typed the command
 
-    # If no message_id is provided, inform the user
     if not message_id:
         update.message.reply_text("No message ID provided for translation.")
         return
 
-    # Fetch the message data using the provided message_id
     try:
-        message_id = int(message_id)  # Convert the message ID to an integer
+        message_id = int(message_id)
     except ValueError:
         update.message.reply_text("Invalid message ID for translation.")
         return
@@ -142,28 +140,25 @@ def translate(update: Update, context: CallbackContext, message_id=None):
     media = message_data['media']
 
     if russian_text:
-        translated_text = None
-        attempts = 5  # Retry up to 5 times
-        delay_between_attempts = 2  # 2 seconds between each attempt
-
-        for attempt in range(attempts):
-            try:
-                translated_text = translator.translate(russian_text, src='ru', dest='en').text
-
-                if translated_text:
-                    break  # Exit loop if translation is successful
-            except json.decoder.JSONDecodeError:
-                logger.warning(f"Translation API error (attempt {attempt + 1}/{attempts}). Retrying...")
-                time.sleep(delay_between_attempts)  # Wait before retrying
-            except Exception as e:
-                logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-                time.sleep(delay_between_attempts)  # Wait before retrying
-
-        if not translated_text or translated_text == russian_text:
-            update.message.reply_text("Translation failed, please try again later.")
-            return
-
         try:
+            # Retry logic
+            attempts = 5
+            delay_between_attempts = 2  # seconds
+            translated_text = None
+
+            for attempt in range(attempts):
+                try:
+                    translated_text = translator.translate(russian_text, src='ru', dest='en').text
+                    if translated_text:
+                        break
+                except Exception as e:
+                    logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
+                    time.sleep(delay_between_attempts)
+
+            if not translated_text:
+                update.message.reply_text("Translation failed after multiple attempts.")
+                return
+
             # Send the translation as a private message (DM) to the user who typed the command
             if media:
                 if isinstance(media, list):  # Handle photos
@@ -178,10 +173,8 @@ def translate(update: Update, context: CallbackContext, message_id=None):
             increment_translation_count(str(user_id))
 
         except Unauthorized:
-            # Notify the user they need to start a chat with the bot first
             update.message.reply_text("You need to start a chat with the bot first.")
         except Exception as e:
-            # Log the error with details
             logger.error(f"Unexpected error during translation: {e}")
             update.message.reply_text(f"An error occurred: {str(e)}")
     else:
