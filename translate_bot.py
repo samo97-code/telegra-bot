@@ -193,13 +193,18 @@ def translate(update: Update, context: CallbackContext, message_id=None):
             # Increment the translation count for the user
             increment_translation_count(str(user_id))
 
+            # Delete the "Loading..." message after translation is shown
+            context.bot.delete_message(chat_id=user_id, message_id=loading_message.message_id)
+
         except Unauthorized:
             context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="You need to start a chat with the bot first.")
         except Exception as e:
             logger.error(f"Unexpected error during translation: {e}")
             context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text=f"An error occurred: {str(e)}")
+            context.bot.delete_message(chat_id=user_id, message_id=loading_message.message_id)  # Ensure deletion on error
     else:
         context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="Error: Original message not found.")
+        context.bot.delete_message(chat_id=user_id, message_id=loading_message.message_id)  # Ensure deletion if no message found
 
 # Function to handle new posts in the channel and store the message for translation
 def handle_new_channel_post(update: Update, context: CallbackContext):
