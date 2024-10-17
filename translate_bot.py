@@ -142,14 +142,28 @@ def translate(update: Update, context: CallbackContext, message_id=None):
     media = message_data['media']
 
     if russian_text:
+        translated_text = None
+        attempts = 5  # Retry up to 5 times
+        delay_between_attempts = 2  # 2 seconds between each attempt
+
+        for attempt in range(attempts):
+            try:
+                translated_text = translator.translate(russian_text, src='ru', dest='en').text
+
+                if translated_text:
+                    break  # Exit loop if translation is successful
+            except json.decoder.JSONDecodeError:
+                logger.warning(f"Translation API error (attempt {attempt + 1}/{attempts}). Retrying...")
+                time.sleep(delay_between_attempts)  # Wait before retrying
+            except Exception as e:
+                logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+                time.sleep(delay_between_attempts)  # Wait before retrying
+
+        if not translated_text or translated_text == russian_text:
+            update.message.reply_text("Translation failed, please try again later.")
+            return
+
         try:
-            # Retry mechanism for translation with automatic retry on error
-            translated_text = translator.translate(russian_text, src='ru', dest='en').text
-
-            if not translated_text or translated_text == russian_text:
-                update.message.reply_text("Translation failed, please try again.")
-                return
-
             # Send the translation as a private message (DM) to the user who typed the command
             if media:
                 if isinstance(media, list):  # Handle photos
