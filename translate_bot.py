@@ -120,6 +120,7 @@ def deep_link_handler(update: Update, context: CallbackContext):
 def translate(update: Update, context: CallbackContext, message_id=None):
     user_id = update.message.from_user.id  # User who typed the command
 
+    # If no message_id is provided, inform the user
     if not message_id:
         update.message.reply_text("No message ID provided for translation.")
         return
@@ -139,24 +140,21 @@ def translate(update: Update, context: CallbackContext, message_id=None):
     russian_text = message_data['text']
     media = message_data['media']
 
+    # Remove the instruction part if present
+    instruction_text = "🤖 To receive translations in DM"
+    if instruction_text in russian_text:
+        russian_text = russian_text.split(instruction_text)[0].strip()
+
+    # Show a "Loading..." message to the user
+    loading_message = context.bot.send_message(chat_id=user_id, text="Loading...")
+
     if russian_text:
         try:
-            # Retry logic
-            attempts = 5
-            delay_between_attempts = 2  # seconds
-            translated_text = None
+            # Retry mechanism for translation with automatic retry on error
+            translated_text = translator.translate(russian_text, src='ru', dest='en').text
 
-            for attempt in range(attempts):
-                try:
-                    translated_text = translator.translate(russian_text, src='ru', dest='en').text
-                    if translated_text:
-                        break
-                except Exception as e:
-                    logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
-                    time.sleep(delay_between_attempts)
-
-            if not translated_text:
-                update.message.reply_text("Translation failed after multiple attempts.")
+            if not translated_text or translated_text == russian_text:
+                context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="Translation failed, please try again.")
                 return
 
             # Send the translation as a private message (DM) to the user who typed the command
@@ -166,19 +164,18 @@ def translate(update: Update, context: CallbackContext, message_id=None):
                 elif hasattr(media, 'file_id'):  # Handle video, GIF, etc.
                     context.bot.send_document(chat_id=user_id, document=media.file_id, caption=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
             else:
-                # Send the translated text as a DM
-                context.bot.send_message(chat_id=user_id, text=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
+                context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
 
             # Increment the translation count for the user
             increment_translation_count(str(user_id))
 
         except Unauthorized:
-            update.message.reply_text("You need to start a chat with the bot first.")
+            context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="You need to start a chat with the bot first.")
         except Exception as e:
             logger.error(f"Unexpected error during translation: {e}")
-            update.message.reply_text(f"An error occurred: {str(e)}")
+            context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text=f"An error occurred: {str(e)}")
     else:
-        update.message.reply_text("Error: Original message not found.")
+        context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="Error: Original message not found.")
 
 # Function to handle new posts in the channel and store the message for translation
 def handle_new_channel_post(update: Update, context: CallbackContext):
