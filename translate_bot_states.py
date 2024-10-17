@@ -34,6 +34,14 @@ def start(update: Update, context: CallbackContext):
     total_users = len(stats)
     update.message.reply_text(f"Total unique users who started the bot: {total_users}")
 
+
+#  translation_instruction = (
+#         "🦾\n"
+#         f"<blockquote>To receive translations in DM, click once on "
+#         f"<a href='https://t.me/Meta7Helper7Bot?start=translate_{message.message_id}'>Start Chat</a> "
+#         "to open a conversation with the bot.</blockquote>"
+#     )
+
 # /stats command for the admin to check the stats
 def stats(update: Update, context: CallbackContext):
     stats = load_stats()

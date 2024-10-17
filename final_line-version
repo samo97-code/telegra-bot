@@ -37,17 +37,9 @@ def init_db():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS user_stats (
         user_id TEXT PRIMARY KEY,
-        times_started INTEGER,
-        translations INTEGER DEFAULT 0
+        times_started INTEGER
     )
     ''')
-
-    # Check if the 'translations' column exists, and if not, add it
-    cursor.execute("PRAGMA table_info(user_stats);")
-    columns = [col[1] for col in cursor.fetchall()]
-
-    if 'translations' not in columns:
-        cursor.execute("ALTER TABLE user_stats ADD COLUMN translations INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -57,36 +49,26 @@ def get_user_stats(user_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT times_started, translations FROM user_stats WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT times_started FROM user_stats WHERE user_id = ?", (user_id,))
     result = cursor.fetchone()
 
     conn.close()
-    return result if result else (0, 0)
+    return result[0] if result else 0
 
 # Function to increment the /start count for a user in SQLite
 def update_user_stats(user_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    current_stats = get_user_stats(user_id)
-    times_started = current_stats[0]
+    current_count = get_user_stats(user_id)
 
-    if times_started == 0:
+    if current_count == 0:
         # Insert new user if they don't exist
         cursor.execute("INSERT INTO user_stats (user_id, times_started) VALUES (?, ?)", (user_id, 1))
     else:
         # Update the count for existing user
         cursor.execute("UPDATE user_stats SET times_started = times_started + 1 WHERE user_id = ?", (user_id,))
 
-    conn.commit()
-    conn.close()
-
-# Function to increment the translation count for a user
-def increment_translation_count(user_id):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute("UPDATE user_stats SET translations = translations + 1 WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
@@ -98,7 +80,7 @@ def start(update: Update, context: CallbackContext):
     update_user_stats(user_id)
 
     # Inform the user about the bot and its capabilities
-    update.message.reply_text("Hello! You can now receive translations by clicking the '[Start Chat]' link on posts.")
+    update.message.reply_text("Hello! You can now receive translations by using the /translate command.")
 
 # Handle the deep linking logic when entering from the "Start Chat" link
 def deep_link_handler(update: Update, context: CallbackContext):
@@ -108,7 +90,7 @@ def deep_link_handler(update: Update, context: CallbackContext):
     message_id = context.args[0].replace("translate_", "") if context.args else None
 
     # Check if the user already exists in the database
-    if get_user_stats(user_id)[0] > 0 and message_id:
+    if get_user_stats(user_id) > 0 and message_id:
         # User already exists, skip /start and go to /translate with the message ID
         translate(update, context, message_id)
     elif message_id:
@@ -144,7 +126,28 @@ def translate(update: Update, context: CallbackContext, message_id=None):
     if russian_text:
         try:
             # Retry mechanism for translation with automatic retry on error
-            translated_text = translator.translate(russian_text, src='ru', dest='en').text
+            attempts = 5  # Increase number of attempts
+            delay_between_attempts = 2  # Delay in seconds between attempts
+            translated_text = None
+
+            for attempt in range(attempts):
+                try:
+                    # Try to translate the Russian text to English
+                    translated_text = translator.translate(russian_text, src='ru', dest='en').text
+                    if translated_text:  # If translation is successful, break out of the loop
+                        break
+                except json.decoder.JSONDecodeError as e:
+                    logger.warning(f"Translation API error, attempt {attempt + 1} of {attempts}: {e}")
+                    if attempt < attempts - 1:  # If it's not the last attempt, wait before retrying
+                        time.sleep(delay_between_attempts)
+                    else:  # If all attempts fail, raise the exception
+                        raise
+                except Exception as e:
+                    logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+                    if attempt < attempts - 1:
+                        time.sleep(delay_between_attempts)
+                    else:
+                        raise
 
             if not translated_text or translated_text == russian_text:
                 update.message.reply_text("Translation failed, please try again.")
@@ -159,10 +162,6 @@ def translate(update: Update, context: CallbackContext, message_id=None):
             else:
                 # Send the translated text as a DM
                 context.bot.send_message(chat_id=user_id, text=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
-
-            # Increment the translation count for the user
-            increment_translation_count(str(user_id))
-
         except Unauthorized:
             # Notify the user they need to start a chat with the bot first
             update.message.reply_text("You need to start a chat with the bot first.")
@@ -194,13 +193,34 @@ def handle_new_channel_post(update: Update, context: CallbackContext):
         'media': message.photo or message.video or message.animation or message.document
     }
 
-    # Send the message ID to the admin
+    # Add an instruction with the Start Chat link to the original post, using message.message_id
     try:
-        context.bot.send_message(chat_id=ADMIN_USER_ID, text=f"New post ID: {message.message_id}")
-    except BadRequest as e:
-        logger.error(f"Error sending message ID to admin: {e}")
+        # Escape parentheses and other MarkdownV2 special characters
+        translation_instruction = (
+            "🦾\n"
+            f"<blockquote>To receive translations in DM, click once on "
+            f"<a href='https://t.me/Meta7Helper7Bot?start=translate_{message.message_id}'>Start Chat</a> "
+            "to open a conversation with the bot.</blockquote>"
+        )
 
-# Admin-only /stats command to include translations count
+        if message.photo or message.video:  # If it's a media message
+            context.bot.edit_message_caption(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+                caption=f"{message_text}\n\n{translation_instruction}",
+                parse_mode=ParseMode.HTML
+            )
+        else:  # If it's a text message
+            context.bot.edit_message_text(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+                text=f"{message_text}\n\n{translation_instruction}",
+                parse_mode=ParseMode.HTML
+            )
+    except BadRequest as e:
+        logger.error(f"Error editing message to add translation instruction: {e}")
+
+# Admin-only /stats command
 def stats(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
 
@@ -219,14 +239,10 @@ def stats(update: Update, context: CallbackContext):
     cursor.execute("SELECT SUM(times_started) FROM user_stats")
     total_starts = cursor.fetchone()[0] or 0
 
-    cursor.execute("SELECT SUM(translations) FROM user_stats")
-    total_translations = cursor.fetchone()[0] or 0
-
     conn.close()
 
     update.message.reply_text(f"Total unique users: {total_users}")
     update.message.reply_text(f"Total /start commands issued: {total_starts}")
-    update.message.reply_text(f"Total translations made: {total_translations}")
 
 # Main function to start the bot
 def main():
