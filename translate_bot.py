@@ -126,7 +126,7 @@ def translate(update: Update, context: CallbackContext, message_id=None):
         return
 
     try:
-        message_id = int(message_id)
+        message_id = int(message_id)  # Convert message_id to an integer
     except ValueError:
         update.message.reply_text("Invalid message ID for translation.")
         return
@@ -151,8 +151,30 @@ def translate(update: Update, context: CallbackContext, message_id=None):
     if russian_text:
         try:
             # Retry mechanism for translation with automatic retry on error
-            translated_text = translator.translate(russian_text, src='ru', dest='en').text
+            attempts = 5  # Set number of retry attempts
+            delay_between_attempts = 2  # Delay between retries in seconds
+            translated_text = None
 
+            for attempt in range(attempts):
+                try:
+                    # Try to translate the Russian text to English
+                    translated_text = translator.translate(russian_text, src='ru', dest='en').text
+                    if translated_text:  # If translation is successful, break the loop
+                        break
+                except json.decoder.JSONDecodeError as e:
+                    logger.warning(f"Translation API error (attempt {attempt + 1}/{attempts}): {e}")
+                    if attempt < attempts - 1:
+                        time.sleep(delay_between_attempts)  # Wait before retrying
+                    else:
+                        raise  # Raise the exception if all attempts fail
+                except Exception as e:
+                    logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+                    if attempt < attempts - 1:
+                        time.sleep(delay_between_attempts)
+                    else:
+                        raise
+
+            # If the translation is still unsuccessful after retries
             if not translated_text or translated_text == russian_text:
                 context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text="Translation failed, please try again.")
                 return
@@ -164,6 +186,7 @@ def translate(update: Update, context: CallbackContext, message_id=None):
                 elif hasattr(media, 'file_id'):  # Handle video, GIF, etc.
                     context.bot.send_document(chat_id=user_id, document=media.file_id, caption=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
             else:
+                # Edit the "Loading..." message with the translation result
                 context.bot.edit_message_text(chat_id=user_id, message_id=loading_message.message_id, text=f"🇺🇸 {translated_text}", parse_mode=ParseMode.HTML)
 
             # Increment the translation count for the user
