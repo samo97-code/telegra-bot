@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import logging
+import json  # Import the json module
 from telegram import ParseMode, Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from googletrans import Translator
